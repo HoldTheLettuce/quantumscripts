@@ -23,7 +23,7 @@ import org.quantumbot.interfaces.Painter;
 
 import taylor.Config;
 import taylor.manager.ManagerScript;
-import taylor.manager.requests.PostRequest;
+import taylor.api.requests.PostRequest;
 
 @ScriptManifest(author = "Taylor", description = "", image = "", name = "Runner", version = 0)
 public class RunnerScript extends ManagerScript implements Logger, Painter {

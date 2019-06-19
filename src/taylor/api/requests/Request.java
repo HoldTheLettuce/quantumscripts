@@ -1,5 +1,6 @@
-package taylor.manager.requests;
+package taylor.api.requests;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -51,5 +52,5 @@ public abstract class Request {
 		return new JSONArray(response);
 	}
 	
-	public abstract void send();
+	public abstract void send() throws IOException;
 }

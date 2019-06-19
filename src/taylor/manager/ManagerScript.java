@@ -14,7 +14,7 @@ import org.quantumbot.utils.StringUtils;
 import org.quantumbot.utils.Timer;
 
 import taylor.Config;
-import taylor.manager.requests.GetRequest;
+import taylor.api.requests.GetRequest;
 import taylor.manager.types.Account;
 
 public abstract class ManagerScript extends Script implements Painter, LoginResponseListener {

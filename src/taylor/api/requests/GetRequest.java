@@ -1,4 +1,4 @@
-package taylor.manager.requests;
+package taylor.api.requests;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -35,7 +35,8 @@ public class GetRequest extends Request implements Logger {
 			
 			response = responseBuffer.toString();
 		} catch (IOException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
+			info("Failed request #" + this.getResponseCode());
 		}
 	}
 }

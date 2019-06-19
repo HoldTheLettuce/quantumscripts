@@ -5,7 +5,7 @@ import org.quantumbot.interfaces.Logger;
 import org.quantumbot.utils.Timer;
 
 import taylor.Config;
-import taylor.manager.requests.PostRequest;
+import taylor.api.requests.PostRequest;
 import taylor.manager.types.Account;
 
 public class Manager extends Thread implements Logger {
