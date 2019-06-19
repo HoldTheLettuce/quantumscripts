@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="QuantumScripts:jar">
+    <output-path>$USER_HOME$/QuantumBot/scripts</output-path>
+    <root id="archive" name="QuantumScripts.jar">
+      <element id="module-output" name="QuantumScripts" />
+      <element id="extracted-dir" path="$USER_HOME$/QuantumBot/builds/quantumbot-1560804206.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
