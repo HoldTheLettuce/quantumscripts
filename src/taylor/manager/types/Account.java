@@ -12,6 +12,10 @@ public class Account {
 		this.password = password;
 		this.isMember = isMember;
 	}
+
+	public void ping() {
+
+	}
 	
 	public String getId() {
 		return id;

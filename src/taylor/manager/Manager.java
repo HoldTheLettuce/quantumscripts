@@ -4,8 +4,10 @@ import org.json.JSONObject;
 import org.quantumbot.interfaces.Logger;
 import org.quantumbot.utils.Timer;
 
-import taylor.Config;
-import taylor.api.requests.PostRequest;
+import taylor.api.requests.Request;
+import taylor.manager.requests.AccountRequests;
+import taylor.manager.requests.BotRequests;
+import taylor.manager.requests.ProxyRequests;
 import taylor.manager.types.Account;
 
 public class Manager extends Thread implements Logger {
@@ -16,7 +18,7 @@ public class Manager extends Thread implements Logger {
 
 	private Account account;
 
-	private String proxyId, botId = "Unknown", botStatus = "Unknown";
+	private String proxyId, botId = "Unknown", botStatus = "Unknown", script = "Unknown";
 
 	public Manager(String proxyId) {
 		this.proxyId = proxyId;
@@ -45,25 +47,23 @@ public class Manager extends Thread implements Logger {
 	}
 
 	private void connect() {
-		PostRequest connectReq = new PostRequest(Config.LOCAL_SERVER_HOST + "/api/bots/connect", new JSONObject());
+		Request req = BotRequests.connect(script);
 
-		connectReq.send();
-
-		if(connectReq.isSuccessful()) {
-			botId = connectReq.toJSONObject().getString("id");
+		if(req.isSuccessful()) {
+			botId = req.toJSONObject().getString("id");
 			isConnected = true;
 		}
 	}
 
 	public void disconnect() {
-		new PostRequest(Config.LOCAL_SERVER_HOST + "/api/bots/disconnect", new JSONObject().put("id", botId)).send();
+		BotRequests.deleteOne(botId);
 
 		if(account != null) {
-			new PostRequest(Config.MASTER_SERVER_HOST + "/api/accounts/status", new JSONObject().put("id", account.getId()).put("inUse", false)).send();
+			AccountRequests.updateOne(account.getId(), false);
 		}
 
 		if(proxyId != null) {
-			new PostRequest(Config.MASTER_SERVER_HOST + "/api/proxies/status", new JSONObject().put("id", proxyId).put("inUse", false)).send();
+			ProxyRequests.updateOne(proxyId, false);
 		}
 	}
 
@@ -73,9 +73,7 @@ public class Manager extends Thread implements Logger {
 
 		// Ping bot & handle command
 
-		PostRequest pingReq = new PostRequest(Config.LOCAL_SERVER_HOST + "/api/bots/ping", new JSONObject().put("id", botId).put("status", botStatus));
-
-		pingReq.send();
+		Request pingReq = BotRequests.updateOne(botId, botStatus);
 
 		if(pingReq.isSuccessful()) {
 			isConnected = true;
@@ -84,17 +82,19 @@ public class Manager extends Thread implements Logger {
 
 			JSONObject res = pingReq.toJSONObject();
 
-			String command = res.getString("command");
+			String message = res.getString("message");
 
-			switch(command) {
-			case "stop":
-				disconnect();
+			switch(message) {
+				case "stop":
+					disconnect();
 
-				System.exit(1);
-				break;
+					System.exit(1);
+					break;
+					
+				default:
+					info("Received unknown message");
+					break;
 			}
-
-			new PostRequest(Config.LOCAL_SERVER_HOST + "/api/bots/clear", new JSONObject().put("id", botId)).send();
 		} else {
 			isConnected = false;
 		}
@@ -102,18 +102,18 @@ public class Manager extends Thread implements Logger {
 
 	public void pingAccount() {
 		if(account != null) {
-			new PostRequest(Config.MASTER_SERVER_HOST + "/api/accounts/status", new JSONObject().put("id", account.getId()).put("inUse", true)).send();
+			AccountRequests.updateOne(account.getId(), true);
 		}
 	}
 
 	public void pingProxy() {
 		if(proxyId != null) {
-			new PostRequest(Config.MASTER_SERVER_HOST + "/api/proxies/status", new JSONObject().put("id", proxyId).put("inUse", true)).send();
+			ProxyRequests.updateOne(proxyId, true);
 		}
 	}
 
 	public void deleteAccount() {
-		new PostRequest(Config.MASTER_SERVER_HOST + "/api/accounts/delete", new JSONObject().put("id", account.getId())).send();
+		AccountRequests.deleteOne(account.getId());
 	}
 
 	public boolean isConnected() {
@@ -131,6 +131,8 @@ public class Manager extends Thread implements Logger {
 	public void setBotStatus(String status) {
 		this.botStatus = status;
 	}
+
+	public void setScript(String script) { this.script = script; }
 
 	public void setAccount(Account account) {
 		this.account = account;

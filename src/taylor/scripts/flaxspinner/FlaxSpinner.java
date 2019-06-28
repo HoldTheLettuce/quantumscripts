@@ -43,7 +43,12 @@ public class FlaxSpinner extends ManagerScript implements Logger {
 	private boolean isSpinInterfaceOpen() {
 		return getBot().getWidgets().contains(w -> w.containsText("What would you like to spin"));
 	}
-	
+
+	@Override
+	public void init() {
+
+	}
+
 	@Override
 	public void start() {
 	}

@@ -8,23 +8,22 @@ import org.json.JSONObject;
 import org.quantumbot.api.Script;
 import org.quantumbot.enums.ResponseCode;
 import org.quantumbot.events.LoginEvent;
+import org.quantumbot.interfaces.Logger;
 import org.quantumbot.interfaces.Painter;
 import org.quantumbot.listeners.LoginResponseListener;
 import org.quantumbot.utils.StringUtils;
 import org.quantumbot.utils.Timer;
 
-import taylor.Config;
-import taylor.api.requests.GetRequest;
+import taylor.api.requests.Request;
+import taylor.manager.requests.AccountRequests;
 import taylor.manager.types.Account;
 
-public abstract class ManagerScript extends Script implements Painter, LoginResponseListener {
+public abstract class ManagerScript extends Script implements Painter, LoginResponseListener, Logger {
 	
 	private long startAt;
-	
-	private int stopIn;
 
 	private String proxyId;
-	
+
 	private Timer stopTimer;
 	
 	private Manager manager;
@@ -34,7 +33,7 @@ public abstract class ManagerScript extends Script implements Painter, LoginResp
 		startAt = System.currentTimeMillis();
 		
 		if(getBot().hasArg("stop")) {
-			stopIn = Integer.parseInt(getBot().getArg("stop", 0));
+			int stopIn = Integer.parseInt(getBot().getArg("stop", 0));
 			
 			stopTimer = new Timer(stopIn * 60000);
 		}
@@ -49,6 +48,8 @@ public abstract class ManagerScript extends Script implements Painter, LoginResp
 		
 		getBot().addPainter(this);
 		getBot().addLoginListener(this);
+
+		init();
 	}
 	
 	@Override
@@ -121,17 +122,15 @@ public abstract class ManagerScript extends Script implements Painter, LoginResp
 			manager.setAccount(null);
 		} else if(code == ResponseCode.ACCOUNT_LOCKED || code == ResponseCode.DISABLED) {
 			manager.deleteAccount();
-			//manager.setAccount(null);
-			manager.disconnect();
-			System.exit(1);
+			manager.setAccount(null);
 		}
 	}
-	
+
 	private void retrieveAccount() {
-		GetRequest req = new GetRequest(Config.MASTER_SERVER_HOST + "/api/accounts?limit=1&inUse=false");
-		
-		req.send();
-		
+		Request req = AccountRequests.get(0, 1, false);
+
+		info(req.getRawResponse());
+
 		if(req.isSuccessful()) {
 			JSONArray res = req.toJSONArray();
 			
@@ -140,6 +139,9 @@ public abstract class ManagerScript extends Script implements Painter, LoginResp
 				
 				manager.setAccount(new Account(acc.getString("_id"), acc.getString("username"), acc.getString("password"), acc.getBoolean("isMember")));
 				manager.pingAccount();
+			} else {
+				manager.disconnect();
+				System.exit(1);
 			}
 		}
 	}
@@ -147,7 +149,9 @@ public abstract class ManagerScript extends Script implements Painter, LoginResp
 	public Manager getManager() {
 		return manager;
 	}
-	
+
+	public abstract void init();
+
 	public abstract void start();
 	
 	public abstract void loop() throws InterruptedException;

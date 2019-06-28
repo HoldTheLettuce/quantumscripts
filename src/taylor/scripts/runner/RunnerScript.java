@@ -3,7 +3,6 @@ package taylor.scripts.runner;
 import java.awt.Color;
 import java.awt.Graphics2D;
 
-import org.json.JSONObject;
 import org.quantumbot.api.containers.Item;
 import org.quantumbot.api.enums.Bank;
 import org.quantumbot.api.map.Area;
@@ -21,9 +20,7 @@ import org.quantumbot.events.interactions.WidgetInteractEvent;
 import org.quantumbot.interfaces.Logger;
 import org.quantumbot.interfaces.Painter;
 
-import taylor.Config;
 import taylor.manager.ManagerScript;
-import taylor.api.requests.PostRequest;
 
 @ScriptManifest(author = "Taylor", description = "", image = "", name = "Runner", version = 0)
 public class RunnerScript extends ManagerScript implements Logger, Painter {
@@ -40,10 +37,6 @@ public class RunnerScript extends ManagerScript implements Logger, Painter {
 			target = getBot().getArg("target", 0).replaceAll("_", " ");
 
 		getBot().addPainter(this);
-
-		PostRequest req = new PostRequest(Config.MASTER_SERVER_HOST + "/api/proxies/test", new JSONObject());
-
-		req.send();
 	}
 
 	@Override
@@ -79,6 +72,11 @@ public class RunnerScript extends ManagerScript implements Logger, Painter {
 		g.drawString(String.format("Should Bank: %s", shouldBank()), 20, 240);
 		g.drawString(String.format("Stamina Active: %s", isStaminaActive()), 20, 260);
 		g.drawString(String.format("Target Found: %s", getBot().getPlayers().contains(this.target)), 20, 280);
+	}
+
+	@Override
+	public void init() {
+
 	}
 
 	private void trade() throws InterruptedException {
