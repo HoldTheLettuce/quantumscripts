@@ -1,82 +1,156 @@
 package taylor.scripts.runner;
 
-import java.awt.Color;
 import java.awt.Graphics2D;
 
-import org.quantumbot.api.containers.Item;
-import org.quantumbot.api.enums.Bank;
+import org.json.JSONObject;
 import org.quantumbot.api.map.Area;
 import org.quantumbot.client.script.ScriptManifest;
 import org.quantumbot.events.CloseInterfacesEvent;
-import org.quantumbot.events.containers.BankOpenEvent;
-import org.quantumbot.events.containers.DepositEvent;
-import org.quantumbot.events.containers.EquipmentInteractEvent;
-import org.quantumbot.events.containers.InventoryInteractEvent;
-import org.quantumbot.events.containers.TradeOfferEvent;
-import org.quantumbot.events.containers.WithdrawEvent;
+import org.quantumbot.events.LoginEvent;
+import org.quantumbot.events.LogoutEvent;
+import org.quantumbot.events.WebWalkEvent;
+import org.quantumbot.events.containers.*;
 import org.quantumbot.events.interactions.ObjectInteractEvent;
 import org.quantumbot.events.interactions.PlayerInteractEvent;
-import org.quantumbot.events.interactions.WidgetInteractEvent;
 import org.quantumbot.interfaces.Logger;
 import org.quantumbot.interfaces.Painter;
 
+import org.quantumbot.utils.StringUtils;
+import org.quantumbot.utils.Timer;
+import taylor.api.events.AcceptTradeEvent;
 import taylor.manager.ManagerScript;
+import taylor.manager.types.Account;
 
 @ScriptManifest(author = "Taylor", description = "", image = "", name = "Runner", version = 0)
-public class RunnerScript extends ManagerScript implements Logger, Painter {
+public class RunnerScript extends ManagerScript implements Logger {
 
-	private final Area CASTLE_WARS = new Area(2435, 3099, 2446, 3080), ALTAR = new Area(2568, 4855, 2600, 4822), DUEL_ARENA = new Area(3325, 3221, 3293, 3260);
+	private final Area
+			CASTLE_WARS = new Area(2435, 3099, 2446, 3080),
+			ALTAR = new Area(2568, 4855, 2600, 4822),
+			DUEL_ARENA = new Area(3325, 3221, 3293, 3260),
+			DUEL_RING_SPAWN = new Area(3325, 3221, 3295, 3263);
 
 	private long lastTimeInTrade = System.currentTimeMillis();
 
 	private String target;
 
-	@Override
-	public void start() {
-		if(getBot().hasArg("target"))
-			target = getBot().getArg("target", 0).replaceAll("_", " ");
+	private int targetDurationMinutes;
 
-		getBot().addPainter(this);
+	private Timer stopTimer;
+
+	public RunnerScript() {
+		super("LavaRunner");
 	}
 
 	@Override
-	public void loop() throws InterruptedException {
-		if(CASTLE_WARS.contains(getBot().getPlayers().getLocal())) {
-			getManager().setBotStatus("Banking");
-			bank();
-		} else if(ALTAR.contains(getBot().getPlayers().getLocal())) {
-			getManager().setBotStatus("Trading");
-			trade();
-		} else {
-			getManager().setBotStatus("Traversing");
+	public void onManagerMessage(String trigger, JSONObject content) {
+		info(trigger);
+		info(content.toString());
 
-			if(getBot().getGameObjects().contains("Mysterious ruins") && new ObjectInteractEvent(getBot(), "Mysterious ruins").execute().isComplete()) {
-				sleepUntil(7000, () -> ALTAR.contains(getBot().getPlayers().getLocal()));
-			}
+		switch(trigger) {
+			case "CHANGE_TARGET":
+				this.target = content.getString("target");
+
+				int minutes = Integer.parseInt(content.getString("minutes"));
+
+				if(minutes > 0) {
+					this.targetDurationMinutes = minutes;
+					this.stopTimer = new Timer(minutes * 60000);
+				}
+				break;
+
+			case "STOP":
+				target = null;
+
+				if(getBot().getClient().isInGame()) {
+					stopTimer = null;
+					targetDurationMinutes = 0;
+
+					try {
+						new LogoutEvent(getBot()).execute();
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+				break;
 		}
 	}
 
 	@Override
-	public void exit() {
-		getBot().removePainter(this);
+	public void init() {
+		if(getBot().hasArg("target")) {
+			this.target = getBot().getArg("target", 0).replaceAll("_", " ");
+
+			info("Target : " + target);
+		}
 	}
 
 	@Override
-	public void onPaint(Graphics2D g) {
-		g.setColor(Color.YELLOW);
+	public void start() {}
+
+	@Override
+	public void loop() throws InterruptedException {
+		info(getBot().getClient().isLoginScreen());
+		JSONObject customData = new JSONObject();
+
+		customData.put("target", target == null ? "null" : target);
+		customData.put("durationMinutes", targetDurationMinutes);
+		customData.put("durationLeft", stopTimer == null ? 0 : stopTimer.getRemaining());
+
+		getManagerThread().getConnection().setCustomData(customData);
+
+		if(stopTimer != null && !stopTimer.isRunning()) {
+			target = null;
+			stopTimer = null;
+			targetDurationMinutes = 0;
+
+			new LogoutEvent(getBot()).execute();
+		}
+
+		if(!getBot().getClient().isInGame()) {
+			getManagerThread().getConnection().setState("LOGIN_SCREEN");
+
+			Account account = getManagerThread().getConnection().getAccount();
+
+			if(target != null && account != null) {
+				new LoginEvent(getBot(), account.getUsername(), account.getPassword()).execute();
+			}
+
+			sleep(500);
+			return;
+		}
+
+		if(CASTLE_WARS.contains(getBot().getPlayers().getLocal())) {
+			getManagerThread().getConnection().setState("BANKING");
+			bank();
+		} else if(ALTAR.contains(getBot().getPlayers().getLocal())) {
+			getManagerThread().getConnection().setState("TRADING");
+			trade();
+		} else if(DUEL_RING_SPAWN.contains(getBot().getPlayers().getLocal())) {
+			getManagerThread().getConnection().setState("TRAVERSING");
+			if(getBot().getGameObjects().contains("Mysterious ruins") && new ObjectInteractEvent(getBot(), "Mysterious ruins").execute().isComplete()) {
+				sleepUntil(7000, () -> ALTAR.contains(getBot().getPlayers().getLocal()));
+			}
+		} else {
+			getManagerThread().getConnection().setState("TRAVERSING");
+			new WebWalkEvent(getBot(), CASTLE_WARS).execute();
+		}
+	}
+
+	@Override
+	public void exit() {}
+
+	@Override
+	public void onManagerPaint(Graphics2D g) {
+		g.drawString(String.format("Target: %s", target), 20, 220);
 
 		if(getBot().getClient().isLoginScreen())
 			return;
 
-		g.drawString(String.format("Target: %s", target), 20, 220);
-		g.drawString(String.format("Should Bank: %s", shouldBank()), 20, 240);
+		g.drawString(String.format("Has Items: %s", hasItems()), 20, 240);
 		g.drawString(String.format("Stamina Active: %s", isStaminaActive()), 20, 260);
 		g.drawString(String.format("Target Found: %s", getBot().getPlayers().contains(this.target)), 20, 280);
-	}
-
-	@Override
-	public void init() {
-
+		g.drawString(String.format("Stopping In: %s / %s (Minutes)", StringUtils.formatTime(stopTimer.getRemaining()), targetDurationMinutes), 20, 300);
 	}
 
 	private void trade() throws InterruptedException {
@@ -91,18 +165,28 @@ public class RunnerScript extends ManagerScript implements Logger, Painter {
 					if(new TradeOfferEvent(getBot(), "Binding necklace", 1).execute().isComplete())
 						sleepUntil(1000, () -> getBot().getTradeInventory().contains("Binding necklace"));
 				} else if(!getBot().getTradeInventory().contains("Pure essence")) {
-					if(new TradeOfferEvent(getBot(), "Pure essence", 25).execute().isComplete())
+					if(new TradeOfferEvent(getBot(), "Pure essence", 23).execute().isComplete())
 						sleepUntil(1000, () -> getBot().getTradeInventory().contains("Pure essence"));
 				} else {
-					if(!getBot().getTradeInventory().isAccepted())
-						acceptTrade();
+					if(getBot().getTradeInventory().isAccepted()) {
+						sleepUntil(500, () -> getBot().getTradeInventory().isConfirmOpen() || !getBot().getTradeInventory().isOpen());
+					} else {
+						new AcceptTradeEvent(getBot()).execute();
+					}
 				}
 			} else {
-				if(System.currentTimeMillis() - lastTimeInTrade >= 1000) {
-					if(shouldBank()) {
+				if(System.currentTimeMillis() - lastTimeInTrade >= 2000) {
+					if(!hasItems()) {
 						// Tele to castle wars
-						if(new EquipmentInteractEvent(getBot(), "Ring of dueling(8~1)", "Castle Wars").execute().isComplete())
-							sleepUntil(3500, () -> CASTLE_WARS.contains(getBot().getPlayers().getLocal()));
+						if(getBot().getEquipment().contains("Ring of dueling(8~1)")) {
+							if(new EquipmentInteractEvent(getBot(), "Ring of dueling(8~1)", "Castle Wars").execute().isComplete())
+								sleepUntil(3500, () -> CASTLE_WARS.contains(getBot().getPlayers().getLocal()));
+						} else if(getBot().getInventory().contains("Ring of dueling(8~1)")) {
+							if(new InventoryInteractEvent(getBot(), "Ring of dueling(8~1)", "Wear").execute().isComplete())
+								sleepUntil(3500, () -> getBot().getEquipment().contains("Ring of dueling(8~1)"));
+						} else {
+							new WebWalkEvent(getBot(), CASTLE_WARS).execute();
+						}
 					} else {
 						// Trade player
 						if(new PlayerInteractEvent(getBot(), this.target, "Trade with").execute().isComplete())
@@ -116,84 +200,54 @@ public class RunnerScript extends ManagerScript implements Logger, Painter {
 	}
 
 	private void bank() throws InterruptedException {
-		if(getBot().getBank().isOpen()) {
-			// Deposit unknown items
-			for(Item i : getBot().getInventory().getAll()) {
-				if(!i.getName().equals("Fire tiara") && !i.getName().equals("Ring of dueling(8~1)") && !i.getName().equals("Earth talisman") && !i.getName().equals("Binding necklace") && !i.getName().equals("Pure essence") && !i.getName().equals("Stamina potion(4~1)")) {
-					if(new DepositEvent(getBot(), i.getName(), Integer.MAX_VALUE).execute().isComplete()) {
-						sleepUntil(1500, () -> !getBot().getInventory().contains(i.getName()));
-					}
-				}
-			}
+		if(!getBot().getEquipment().contains("Fire tiara")) {
+			if(getBot().getInventory().contains("Fire tiara")) {
+				if(getBot().getWidgets().hasOpenInterface())
+					new CloseInterfacesEvent(getBot()).execute();
 
-			if(getBot().getInventory().contains("Ring of dueling(8~1)") && !getBot().getEquipment().contains("Ring of dueling(8~1)")) {
-				if(new CloseInterfacesEvent(getBot()).execute().isComplete())
-					sleepUntil(1000, () -> !getBot().getWidgets().hasOpenInterface());
+				if(new InventoryInteractEvent(getBot(), "Fire tiara", "Wear").execute().isComplete())
+					sleepUntil(2000, () -> getBot().getEquipment().contains("Fire tiara"));
 			} else {
-				if(!getBot().getInventory().contains("Earth talisman")) {
-					if(new WithdrawEvent(getBot(), "Earth talisman", 1).execute().isComplete())
-						sleepUntil(1000, () -> getBot().getInventory().contains("Earth talisman"));
-				} else if(!getBot().getInventory().contains("Binding necklace")) {
-					if(new WithdrawEvent(getBot(), "Binding necklace", 1).execute().isComplete())
-						sleepUntil(1000, () -> getBot().getInventory().contains("Binding necklace"));
-				} else if(!getBot().getInventory().contains("Ring of dueling(8~1)") && !getBot().getEquipment().contains("Ring of dueling(8~1)")) {
-					if(new WithdrawEvent(getBot(), "Ring of dueling(8)", 1).execute().isComplete())
-						sleepUntil(1000, () -> getBot().getInventory().contains("Ring of dueling(8)"));
-				} else if(!getBot().getInventory().contains("Stamina potion(4~1)") && getBot().getInventory().getAmount("Pure essence") >= 25 && getBot().getInventory().getEmptySlots() > 0) {
-					if(new WithdrawEvent(getBot(), "Stamina potion(4~1)", 1).execute().isComplete())
-						sleepUntil(1000, () -> getBot().getInventory().contains("Stamina potion(4~1)"));
-				} else if(!getBot().getInventory().contains("Pure essence") || getBot().getInventory().getAmount("Pure essence") < 25) {
-					if(new WithdrawEvent(getBot(), "Pure essence", 25).execute().isComplete())
-						sleepUntil(1000, () -> getBot().getInventory().contains("Pure essence"));
-				} else {
-					if(new CloseInterfacesEvent(getBot()).execute().isComplete())
-						sleepUntil(1000, () -> !getBot().getWidgets().hasOpenInterface());
-				}
+				new BankEvent(getBot()).addReq(1, "Fire tiara").execute();
 			}
 		} else {
-			if(getBot().getInventory().contains("Fire tiara")) {
-				if(new InventoryInteractEvent(getBot(), "Fire tiara", "Wear").execute().isComplete())
-					sleepUntil(1500, () -> getBot().getEquipment().contains("Fire tiara"));
-			} else if(getBot().getSettings().getRunEnergy() <= 35 && getBot().getInventory().contains("Stamina potion(6~1)") && !isStaminaActive()) {
-				if(new InventoryInteractEvent(getBot(), "Stamina potion(6~1)", "Drink").execute().isComplete())
-					sleepUntil(2500, () -> isStaminaActive());
-			} else if(getBot().getInventory().contains("Ring of dueling(8~1)") && !getBot().getEquipment().contains("Ring of dueling(8~1)")) {
-				if(getBot().getWidgets().hasOpenInterface()) {
-					if(new CloseInterfacesEvent(getBot()).execute().isComplete())
-						sleepUntil(1000, () -> !getBot().getWidgets().hasOpenInterface());
-				} else {
+			if(hasItems()) {
+				if(getBot().getWidgets().hasOpenInterface())
+					new CloseInterfacesEvent(getBot()).execute();
+
+				if(!getBot().getEquipment().contains("Ring of dueling(8~1)")) {
 					if(new InventoryInteractEvent(getBot(), "Ring of dueling(8~1)", "Wear").execute().isComplete())
 						sleepUntil(2000, () -> getBot().getEquipment().contains("Ring of dueling(8~1)"));
-				}
-			} else {
-				if(shouldBank()) {
-					if(new BankOpenEvent(getBot(), Bank.CASTLE_WARS_BANK).execute().isComplete())
-						sleepUntil(3000, () -> getBot().getBank().isOpen());
+				} else if(getBot().getSettings().getRunEnergy() <= 35 && !isStaminaActive()) {
+					if(new InventoryInteractEvent(getBot(), "Stamina potion(4~1)", "Drink").execute().isComplete())
+						sleepUntil(2000, this::isStaminaActive);
 				} else {
 					if(new EquipmentInteractEvent(getBot(), "Ring of dueling(8~1)", "Duel Arena").execute().isComplete())
 						sleepUntil(3500, () -> DUEL_ARENA.contains(getBot().getPlayers().getLocal()));
 				}
+			} else {
+				BankEvent e = new BankEvent(getBot());
+
+				e.addReq(1, "Stamina potion(4~1)");
+				e.addReq(2, "Ring of dueling(8~1)");
+				e.addReq(1, "Earth talisman").setNoted(false);
+				e.addReq(1, "Binding necklace").setNoted(false);
+				e.addReq(23, "Pure essence");
+
+				e.execute().then(new CloseInterfacesEvent(getBot()));
 			}
 		}
 	}
 
-	private void acceptTrade() throws InterruptedException {
-		if(getBot().getTradeInventory().isOfferOpen()) {
-			if(new WidgetInteractEvent(getBot(), w -> w.getRootId() == 335 && w.getFirstId() == 10 && w.getSecondId() == -1, "Accept").execute().isComplete()) {
-				sleepUntil(1500, () -> getBot().getTradeInventory().isConfirmOpen());
-			}
-		} else if(getBot().getTradeInventory().isConfirmOpen()) {
-			if(new WidgetInteractEvent(getBot(), w -> w.getRootId() == 334 && w.getFirstId() == 13 && w.getSecondId() == -1, "Accept").execute().isComplete()) {
-				sleepUntil(1500, () -> !getBot().getTradeInventory().isOpen());
-			}
-		}
-	}
 
-	private boolean shouldBank() {
-		return !getBot().getInventory().contains("Earth talisman") ||
-			   !getBot().getInventory().contains("Binding necklace") ||
-			   (!getBot().getInventory().contains("Ring of dueling(8~1)") && !getBot().getEquipment().contains("Ring of dueling(8~1)")) ||
-			   (!getBot().getInventory().contains("Pure essence") || getBot().getInventory().getAmount("Pure essence") < 25);
+	private boolean hasItems() {
+		return
+				getBot().getInventory().contains("Ring of dueling(8~1)") &&
+				getBot().getInventory().contains("Stamina potion(4~1)") &&
+				getBot().getInventory().contains("Earth talisman") &&
+				getBot().getInventory().filter(i -> i.getName().contains("Binding necklace") && !i.isNote()).size() > 0 &&
+				getBot().getInventory().contains("Pure essence") &&
+				getBot().getInventory().getAmount("Pure essence") == 23;
 	}
 
 	private boolean isStaminaActive() {

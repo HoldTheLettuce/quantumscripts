@@ -13,10 +13,6 @@ public class Account {
 		this.isMember = isMember;
 	}
 
-	public void ping() {
-
-	}
-	
 	public String getId() {
 		return id;
 	}

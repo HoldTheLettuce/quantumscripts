@@ -1,160 +1,93 @@
 package taylor.manager;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.quantumbot.api.Script;
-import org.quantumbot.enums.ResponseCode;
-import org.quantumbot.events.LoginEvent;
 import org.quantumbot.interfaces.Logger;
 import org.quantumbot.interfaces.Painter;
-import org.quantumbot.listeners.LoginResponseListener;
-import org.quantumbot.utils.StringUtils;
 import org.quantumbot.utils.Timer;
 
-import taylor.api.requests.Request;
-import taylor.manager.requests.AccountRequests;
-import taylor.manager.types.Account;
+import java.awt.*;
 
-public abstract class ManagerScript extends Script implements Painter, LoginResponseListener, Logger {
-	
-	private long startAt;
+public abstract class ManagerScript extends Script implements Logger, Painter {
 
-	private String proxyId;
+	private ManagerThread managerThread;
 
 	private Timer stopTimer;
-	
-	private Manager manager;
-	
+
+	private String scriptName;
+
+	public ManagerScript(String scriptName) {
+		this.scriptName = scriptName;
+		this.managerThread = new ManagerThread(this);
+		managerThread.start();
+	}
+
 	@Override
 	public void onInit() {
-		startAt = System.currentTimeMillis();
-		
-		if(getBot().hasArg("stop")) {
-			int stopIn = Integer.parseInt(getBot().getArg("stop", 0));
-			
-			stopTimer = new Timer(stopIn * 60000);
-		}
+		getBot().addPainter(this);
+		init();
 
 		if(getBot().hasArg("mproxy")) {
-			proxyId = getBot().getArg("mproxy", 0);
+			info("Found proxy arg: " + getBot().getArg("mproxy", 0));
+			getManagerThread().getConnection().setProxyId(getBot().getArg("mproxy", 0));
 		}
 
-		manager = new Manager(proxyId);
-		
-		manager.start();
-		
-		getBot().addPainter(this);
-		getBot().addLoginListener(this);
-
-		init();
+		if(getBot().hasArg("stop")) {
+			stopTimer = new Timer(Integer.parseInt(getBot().getArg("stop", 0)) * 60000);
+		}
 	}
-	
+
 	@Override
 	public void onStart() {
 		start();
 	}
-	
+
 	@Override
 	public void onLoop() throws InterruptedException {
-		// Handle Stopping
-		
 		if(stopTimer != null && !stopTimer.isRunning()) {
-			manager.disconnect();
+			managerThread.exit();
 			System.exit(1);
 		}
-		
-		// Handle Login
-		
-		if(getBot().getClient().isLoginScreen()) {
-			if(manager.getAccount() == null) {
-				manager.setBotStatus("Retrieving Account");
-				
-				retrieveAccount();
-				
-				sleep(2000);
-			} else {
-				manager.setBotStatus("Logging In");
-				new LoginEvent(getBot(), manager.getAccount().getUsername(), manager.getAccount().getPassword()).execute();
-			}
-		}
-		
+
 		loop();
 	}
-	
+
 	@Override
 	public void onExit() {
-		exit();
-		
-		if(manager.isConnected())
-			manager.disconnect();
-		
-		manager.setRun(false);
-		
 		getBot().removePainter(this);
-		getBot().removeLoginListener(this);
+		managerThread.exit();
+		exit();
 	}
-	
+
 	@Override
 	public void onPaint(Graphics2D g) {
 		g.setColor(Color.GREEN);
-		
-		g.drawString(String.format("Runtime: %s", StringUtils.formatTime(System.currentTimeMillis() - startAt)), 20, 60);
-		
-		if(stopTimer != null)
-			g.drawString(String.format("Stopping In: %s", StringUtils.formatTime(stopTimer.getRemaining())), 20, 80);
 
-		if(manager != null) {
-			g.drawString(String.format("Connected: %s", manager.isConnected()), 20, 100);
-			g.drawString(String.format("Bot Id: %s", manager.getBotId()), 20, 120);
-			g.drawString(String.format("Proxy Id: %s", proxyId), 20, 140);
+		g.drawString("---------- MANAGER ----------", 20, 40);
+		g.drawString(String.format("Connected: %s", getManagerThread().getConnection().isConnected()), 20, 80);
+		g.drawString(String.format("Connection ID: %s", getManagerThread().getConnection().getConnectionId()), 20, 100);
+		g.drawString(String.format("Account ID: %s", getManagerThread().getConnection().getAccount() == null ? "null" : getManagerThread().getConnection().getAccount().getId()), 20, 120);
+		g.drawString(String.format("Proxy ID: %s", getManagerThread().getConnection().getProxyId()), 20, 140);
 
-			if(manager.getAccount() != null)
-				g.drawString(String.format("Account Id: %s", manager.getAccount().getId()), 20, 160);
-		}
-	}
-	
-	@Override
-	public void onResponse(ResponseCode code) {
-		if(code == ResponseCode.ACCOUNT_INACCESSIBLE) {
-			manager.setAccount(null);
-		} else if(code == ResponseCode.ACCOUNT_LOCKED || code == ResponseCode.DISABLED) {
-			manager.deleteAccount();
-			manager.setAccount(null);
-		}
+		g.setColor(Color.YELLOW);
+
+		g.drawString("---------- SCRIPT ----------", 20, 180);
+
+		onManagerPaint(g);
 	}
 
-	private void retrieveAccount() {
-		Request req = AccountRequests.get(0, 1, false);
-
-		info(req.getRawResponse());
-
-		if(req.isSuccessful()) {
-			JSONArray res = req.toJSONArray();
-			
-			if(res.length() > 0) {
-				JSONObject acc = res.getJSONObject(0);
-				
-				manager.setAccount(new Account(acc.getString("_id"), acc.getString("username"), acc.getString("password"), acc.getBoolean("isMember")));
-				manager.pingAccount();
-			} else {
-				manager.disconnect();
-				System.exit(1);
-			}
-		}
-	}
-	
-	public Manager getManager() {
-		return manager;
+	public ManagerThread getManagerThread() {
+		return managerThread;
 	}
 
+	public String getScriptName() {
+		return scriptName;
+	}
+
+	public abstract void onManagerMessage(String trigger, JSONObject content);
+	public abstract void onManagerPaint(Graphics2D g);
 	public abstract void init();
-
 	public abstract void start();
-	
 	public abstract void loop() throws InterruptedException;
-	
 	public abstract void exit();
 }

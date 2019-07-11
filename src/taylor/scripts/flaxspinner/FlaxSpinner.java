@@ -1,5 +1,6 @@
 package taylor.scripts.flaxspinner;
 
+import org.quantumbot.api.Script;
 import org.quantumbot.api.enums.Bank;
 import org.quantumbot.api.map.Area;
 import org.quantumbot.client.script.ScriptManifest;
@@ -12,14 +13,14 @@ import org.quantumbot.interfaces.Logger;
 import taylor.manager.ManagerScript;
 
 @ScriptManifest(author = "Taylor", description = "", image = "", name = "FlaxSpinner", version = 0.1)
-public class FlaxSpinner extends ManagerScript implements Logger {
+public class FlaxSpinner extends Script implements Logger {
 	
 	private final Area spinRoom = new Area(3203, 3209, 3206, 3206, 1);
 	
 	private long lastAnimation = System.currentTimeMillis();
 	
 	@Override
-	public void loop() throws InterruptedException {
+	public void onLoop() throws InterruptedException {
 		if(getBot().getInventory().contains("Flax")) {
 			if(getBot().getGameObjects().closest("Spinning wheel") != null) {
 				if(getBot().getPlayers().getLocal().isAnimating()) {
@@ -42,18 +43,5 @@ public class FlaxSpinner extends ManagerScript implements Logger {
 	
 	private boolean isSpinInterfaceOpen() {
 		return getBot().getWidgets().contains(w -> w.containsText("What would you like to spin"));
-	}
-
-	@Override
-	public void init() {
-
-	}
-
-	@Override
-	public void start() {
-	}
-	
-	@Override
-	public void exit() {
 	}
 }
